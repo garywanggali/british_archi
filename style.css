@@ -70,6 +70,13 @@ canvas {
   z-index: 30;
 }
 
+.overlay--bottom {
+  align-items: end;
+  padding-bottom: calc(40px + env(safe-area-inset-bottom));
+  background: transparent;
+  backdrop-filter: none;
+}
+
 .overlay[hidden] {
   display: none;
 }

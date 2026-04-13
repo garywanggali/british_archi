@@ -173,10 +173,15 @@
 
   let run = createRun();
 
-  const showOverlay = ({ title, subtitle, buttonLabel }) => {
+  const showOverlay = ({ title, subtitle, buttonLabel, bottom = false }) => {
     overlayTitle.textContent = title;
     overlaySubtitle.textContent = subtitle;
     overlayButton.textContent = buttonLabel;
+    if (bottom) {
+      overlay.classList.add("overlay--bottom");
+    } else {
+      overlay.classList.remove("overlay--bottom");
+    }
     overlay.hidden = false;
   };
 
@@ -325,6 +330,7 @@
       title: `You built: ${run.end.building.name}!`,
       subtitle: "再来一局，试试不同的组合（结构 + 风格 + 材质等级）",
       buttonLabel: "再来一局",
+      bottom: true,
     });
   };
 
@@ -716,7 +722,7 @@
       const forcedStage = "late";
 
       ctx.globalAlpha = 0.85 * a;
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillStyle = "rgba(0,0,0,0.65)";
       ctx.fillRect(0, 0, w, h);
       ctx.globalAlpha = 1;
 
@@ -732,12 +738,6 @@
         focusBuildingId: focus,
         rotation: rot,
       });
-
-      ctx.fillStyle = "rgba(226, 232, 240, 0.92)";
-      ctx.font = "800 18px ui-sans-serif, system-ui";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.fillText(`You built: ${run.end.building?.name || ""}!`, w / 2, by + bigH + 10);
     }
   };
 

@@ -7,7 +7,6 @@
   const overlayButton = document.getElementById("overlayButton");
   const hudStructure = document.getElementById("hudStructure");
   const hudStyle = document.getElementById("hudStyle");
-  const hudMaterial = document.getElementById("hudMaterial");
   const hudHelp = document.getElementById("hudHelp");
 
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
@@ -27,11 +26,7 @@
     c.quadraticCurveTo(x, y, x + rr, y);
   };
 
-  const MATERIALS = {
-    stone: { label: "石头", value: 5, color: "#cbd5e1" },
-    steel: { label: "钢铁", value: 8, color: "#94a3b8" },
-    glass: { label: "玻璃", value: 12, color: "#7dd3fc" },
-  };
+  const MATERIALS = {};
 
   const STRUCTURE = {
     tall: "Tall",
@@ -61,56 +56,12 @@
     bbc: { id: "bbc", name: "BBC Building", img: ASSETS.bbc },
   };
 
-  const toMaterialTier = (score) => {
-    if (score <= 30) return "low";
-    if (score <= 70) return "mid";
-    return "high";
-  };
-
-  const resolveFinalBuilding = ({ structure, style, materialScore }) => {
-    const tier = toMaterialTier(materialScore);
-    if (structure === STRUCTURE.wide && tier === "low") return BUILDINGS.redHouse;
+  const resolveFinalBuilding = ({ structure, style }) => {
+    if (structure === STRUCTURE.wide && style === STYLE.gothic) return BUILDINGS.redHouse;
     if (structure === STRUCTURE.tall && style === STYLE.gothic) return BUILDINGS.westminster;
     if (structure === STRUCTURE.wide && style === STYLE.industrialModern) return BUILDINGS.hoover;
-    if (structure === STRUCTURE.tall && tier === "high") return BUILDINGS.bbc;
-
-    const candidates = [
-      {
-        building: BUILDINGS.redHouse,
-        wants: { structure: STRUCTURE.wide, style: null, tier: ["low", "mid"] },
-      },
-      {
-        building: BUILDINGS.westminster,
-        wants: { structure: STRUCTURE.tall, style: STYLE.gothic, tier: ["mid", "high"] },
-      },
-      {
-        building: BUILDINGS.hoover,
-        wants: { structure: STRUCTURE.wide, style: STYLE.industrialModern, tier: ["mid"] },
-      },
-      {
-        building: BUILDINGS.bbc,
-        wants: { structure: STRUCTURE.tall, style: STYLE.industrialModern, tier: ["high"] },
-      },
-    ];
-
-    const scoreCandidate = (c) => {
-      let s = 0;
-      if (structure && c.wants.structure === structure) s += 2;
-      if (c.wants.style && style && c.wants.style === style) s += 2;
-      if (c.wants.tier.includes(tier)) s += 1;
-      return s;
-    };
-
-    let best = candidates[0];
-    let bestScore = scoreCandidate(best);
-    for (let i = 1; i < candidates.length; i += 1) {
-      const sc = scoreCandidate(candidates[i]);
-      if (sc > bestScore) {
-        best = candidates[i];
-        bestScore = sc;
-      }
-    }
-    return best.building;
+    if (structure === STRUCTURE.tall && style === STYLE.industrialModern) return BUILDINGS.bbc;
+    return BUILDINGS.redHouse; // fallback
   };
 
   const mulberry32 = (seed) => {
@@ -146,7 +97,6 @@
       player: { lane: -1, laneX: -1, laneTarget: -1 },
       structure: null,
       style: null,
-      materialScore: 0,
       gates: [
         {
           id: "structure",
@@ -163,10 +113,7 @@
           right: { label: "工业/现代", apply: (r) => (r.style = STYLE.industrialModern) },
         },
       ],
-      pickups: [],
-      spawnCursor: 0.42,
-      materialZone: { start: 0.4, end: 0.9 },
-      finishAt: 1,
+      finishAt: 0.5,
       end: { active: false, t: 0, building: null },
     };
   };
@@ -192,7 +139,6 @@
   const updateHud = () => {
     hudStructure.textContent = `Structure: ${run.structure || "-"}`;
     hudStyle.textContent = `Style: ${run.style || "-"}`;
-    hudMaterial.textContent = `Material: ${run.materialScore}`;
     hudHelp.textContent = "←/→ 或滑动：左 / 右";
   };
 
@@ -262,9 +208,6 @@
     run.player.laneX = -1;
     run.structure = null;
     run.style = null;
-    run.materialScore = 0;
-    run.pickups.length = 0;
-    run.spawnCursor = run.materialZone.start + 0.02;
     run.end.active = false;
     hideOverlay();
     updateHud();
@@ -282,40 +225,6 @@
     }
   };
 
-  const spawnPickups = () => {
-    if (run.progress < run.materialZone.start) return;
-    if (run.spawnCursor > run.materialZone.end) return;
-    const ahead = 0.22;
-    while (run.spawnCursor < Math.min(run.materialZone.end, run.progress + ahead)) {
-      const lane = run.rng() < 0.5 ? -1 : 1;
-      const t = run.rng();
-      const type = t < 0.44 ? "stone" : t < 0.78 ? "steel" : "glass";
-      const gap = lerp(0.02, 0.05, run.rng());
-      run.pickups.push({
-        id: `${run.seed}-${Math.floor(run.spawnCursor * 10000)}-${lane}`,
-        at: run.spawnCursor,
-        lane,
-        type,
-        collected: false,
-      });
-      run.spawnCursor += gap;
-    }
-  };
-
-  const collectPickups = () => {
-    const hitWindow = 0.018;
-    for (const p of run.pickups) {
-      if (p.collected) continue;
-      if (p.lane !== run.player.lane) continue;
-      if (Math.abs(p.at - run.progress) > hitWindow) continue;
-      p.collected = true;
-      run.materialScore = clamp(run.materialScore + MATERIALS[p.type].value, 0, 100);
-      updateHud();
-    }
-    const keepAfter = run.progress - 0.08;
-    run.pickups = run.pickups.filter((p) => !p.collected && p.at >= keepAfter);
-  };
-
   const endRun = () => {
     run.state = "ended";
     run.end.active = true;
@@ -323,40 +232,14 @@
     run.end.building = resolveFinalBuilding({
       structure: run.structure || STRUCTURE.wide,
       style: run.style || STYLE.industrialModern,
-      materialScore: run.materialScore,
     });
     updateHud();
     showOverlay({
       title: `You built: ${run.end.building.name}!`,
-      subtitle: "再来一局，试试不同的组合（结构 + 风格 + 材质等级）",
+      subtitle: "再来一局，试试不同的组合（结构 + 风格）",
       buttonLabel: "再来一局",
       bottom: true,
     });
-  };
-
-  const materialPalette = ({ tier, style }) => {
-    if (tier === "high") {
-      return {
-        base: "#0ea5e9",
-        fill: "rgba(125, 211, 252, 0.35)",
-        glow: "rgba(56, 189, 248, 0.65)",
-        accent: style === STYLE.gothic ? "#fbbf24" : "#a7f3d0",
-      };
-    }
-    if (tier === "mid") {
-      return {
-        base: "#cbd5e1",
-        fill: "rgba(148, 163, 184, 0.32)",
-        glow: "rgba(226, 232, 240, 0.25)",
-        accent: style === STYLE.gothic ? "#60a5fa" : "#f59e0b",
-      };
-    }
-    return {
-      base: "#ef4444",
-      fill: "rgba(239, 68, 68, 0.25)",
-      glow: "rgba(244, 63, 94, 0.18)",
-      accent: "#fca5a5",
-    };
   };
 
   const drawBuilding = ({
@@ -366,8 +249,6 @@
     h,
     structure,
     style,
-    tier,
-    stage,
     focusBuildingId,
     rotation = 0,
   }) => {
@@ -375,11 +256,6 @@
     ctx.translate(x + w / 2, y + h / 2);
     ctx.rotate(rotation);
     ctx.translate(-w / 2, -h / 2);
-
-    const pal = materialPalette({ tier, style });
-    const skeleton = stage === "early";
-    const complete = stage === "mid" || stage === "late";
-    const glow = stage === "late";
 
     if (focusBuildingId) {
       const b = Object.values(BUILDINGS).find((x) => x.id === focusBuildingId);
@@ -419,26 +295,12 @@
     const foundationW = w * (structure === STRUCTURE.tall ? 0.5 : 0.82);
     const foundationX = (w - foundationW) / 2;
 
-    if (glow) {
-      ctx.fillStyle = pal.glow;
-      ctx.beginPath();
-      roundRectPath(
-        ctx,
-        foundationX - w * 0.02,
-        baseY - floorH - h * 0.02,
-        foundationW + w * 0.04,
-        floorH + h * 0.04,
-        16,
-      );
-      ctx.fill();
-    }
-
     ctx.lineWidth = lineW;
     ctx.strokeStyle = stroke(0.9);
-    ctx.fillStyle = complete ? pal.fill : "rgba(255,255,255,0.05)";
+    ctx.fillStyle = "rgba(148, 163, 184, 0.32)";
     ctx.beginPath();
     roundRectPath(ctx, foundationX, baseY - floorH, foundationW, floorH, 12);
-    if (complete) ctx.fill();
+    ctx.fill();
     ctx.stroke();
 
     const bodyW = w * (structure === STRUCTURE.tall ? 0.38 : 0.76);
@@ -446,61 +308,58 @@
     const bodyX = (w - bodyW) / 2;
     const bodyY = baseY - floorH - bodyH;
 
-    ctx.fillStyle = complete ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.03)";
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
     ctx.strokeStyle = stroke(0.85);
     ctx.beginPath();
     roundRectPath(ctx, bodyX, bodyY, bodyW, bodyH, structure === STRUCTURE.tall ? 10 : 14);
-    if (complete) ctx.fill();
+    ctx.fill();
     ctx.stroke();
 
     const isGothic = style === STYLE.gothic;
     const isModern = style === STYLE.industrialModern;
-    const tierIsLow = tier === "low";
 
     if (structure === STRUCTURE.tall) {
       const towerW = w * 0.24;
       const towerH = h * 0.52;
       const towerX = (w - towerW) / 2;
       const towerY = bodyY - towerH + h * 0.08;
-      ctx.fillStyle = complete ? pal.fill : "rgba(255,255,255,0.03)";
+      ctx.fillStyle = "rgba(148, 163, 184, 0.32)";
       ctx.strokeStyle = stroke(0.9);
       ctx.beginPath();
       roundRectPath(ctx, towerX, towerY, towerW, towerH, isModern ? 16 : 8);
-      if (complete) ctx.fill();
+      ctx.fill();
       ctx.stroke();
 
       if (isGothic || focusBuildingId === BUILDINGS.westminster.id) {
-        ctx.fillStyle = complete ? pal.base : "rgba(255,255,255,0.02)";
+        ctx.fillStyle = "#cbd5e1";
         ctx.strokeStyle = stroke(0.85);
         ctx.beginPath();
         ctx.moveTo(w / 2, towerY - h * 0.12);
         ctx.lineTo(towerX, towerY + h * 0.06);
         ctx.lineTo(towerX + towerW, towerY + h * 0.06);
         ctx.closePath();
-        if (complete) ctx.fill();
+        ctx.fill();
         ctx.stroke();
 
-        if (complete && (tier === "mid" || tier === "high")) {
-          const winW = towerW * 0.34;
-          const winH = towerH * 0.22;
-          ctx.fillStyle = "rgba(96, 165, 250, 0.35)";
-          ctx.strokeStyle = "rgba(96, 165, 250, 0.55)";
-          ctx.beginPath();
-          roundRectPath(ctx, w / 2 - winW / 2, towerY + towerH * 0.35, winW, winH, 10);
-          ctx.fill();
-          ctx.stroke();
-        }
+        const winW = towerW * 0.34;
+        const winH = towerH * 0.22;
+        ctx.fillStyle = "rgba(96, 165, 250, 0.35)";
+        ctx.strokeStyle = "rgba(96, 165, 250, 0.55)";
+        ctx.beginPath();
+        roundRectPath(ctx, w / 2 - winW / 2, towerY + towerH * 0.35, winW, winH, 10);
+        ctx.fill();
+        ctx.stroke();
       } else {
-        ctx.fillStyle = complete ? pal.base : "rgba(255,255,255,0.02)";
+        ctx.fillStyle = "#0ea5e9";
         ctx.strokeStyle = stroke(0.8);
         ctx.beginPath();
         roundRectPath(ctx, w / 2 - towerW * 0.55, towerY - h * 0.08, towerW * 1.1, h * 0.1, 18);
-        if (complete) ctx.fill();
+        ctx.fill();
         ctx.stroke();
       }
     } else {
       if (isModern || focusBuildingId === BUILDINGS.hoover.id) {
-        ctx.strokeStyle = `rgba(245, 158, 11, ${complete ? 0.75 : 0.35})`;
+        ctx.strokeStyle = `rgba(245, 158, 11, 0.75)`;
         ctx.lineWidth = Math.max(2, Math.round(lineW * 0.9));
         const stripeCount = 4;
         for (let i = 1; i <= stripeCount; i += 1) {
@@ -511,44 +370,18 @@
           ctx.stroke();
         }
       }
-      if (tierIsLow || focusBuildingId === BUILDINGS.redHouse.id) {
-        ctx.strokeStyle = `rgba(239, 68, 68, ${complete ? 0.65 : 0.3})`;
+      if (focusBuildingId === BUILDINGS.redHouse.id) {
+        ctx.strokeStyle = `rgba(239, 68, 68, 0.65)`;
         ctx.lineWidth = Math.max(2, Math.round(lineW * 0.8));
         const brickRows = 6;
         for (let i = 1; i < brickRows; i += 1) {
           const sy = bodyY + (bodyH * i) / brickRows;
           ctx.beginPath();
-          ctx.moveTo(bodyX + bodyW * 0.06, sy);
-          ctx.lineTo(bodyX + bodyW * 0.94, sy);
+          ctx.moveTo(bodyX + bodyW * 0.08, sy);
+          ctx.lineTo(bodyX + bodyW * 0.92, sy);
           ctx.stroke();
         }
       }
-      ctx.strokeStyle = stroke(0.85);
-      ctx.lineWidth = lineW;
-      ctx.beginPath();
-      ctx.moveTo(bodyX, bodyY);
-      ctx.lineTo(w / 2, bodyY - h * 0.12);
-      ctx.lineTo(bodyX + bodyW, bodyY);
-      ctx.stroke();
-    }
-
-    if (complete && isModern && (tier === "high" || focusBuildingId === BUILDINGS.bbc.id)) {
-      const glassW = bodyW * 0.86;
-      const glassH = bodyH * 0.62;
-      ctx.fillStyle = "rgba(125, 211, 252, 0.22)";
-      ctx.strokeStyle = "rgba(125, 211, 252, 0.45)";
-      ctx.beginPath();
-      roundRectPath(ctx, (w - glassW) / 2, bodyY + bodyH * 0.18, glassW, glassH, 14);
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    if (skeleton) {
-      ctx.globalAlpha = 0.65;
-      ctx.strokeStyle = "rgba(226, 232, 240, 0.65)";
-      ctx.lineWidth = lineW;
-      ctx.strokeRect(bodyX, bodyY, bodyW, bodyH);
-      ctx.globalAlpha = 1;
     }
 
     ctx.restore();
@@ -626,24 +459,6 @@
 
     for (const gate of run.gates) drawGate(gate);
 
-    for (const p of run.pickups) {
-      const dy = p.at - run.progress;
-      const y = playerY - dy * roadH * 1.25;
-      if (y < roadY - 60 || y > roadY + roadH + 60) continue;
-      const x = laneToX(p.lane, w);
-      const mat = MATERIALS[p.type];
-      const r = 12;
-      ctx.fillStyle = mat.color;
-      ctx.globalAlpha = 0.85;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = "rgba(255,255,255,0.25)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-
     const finishDy = run.finishAt - run.progress;
     const finishY = playerY - finishDy * roadH * 1.25;
     if (finishY < roadY + roadH + 120 && finishY > roadY - 120) {
@@ -668,8 +483,6 @@
     ctx.fill();
     ctx.stroke();
 
-    const tier = toMaterialTier(run.materialScore);
-    const stage = run.materialScore <= 30 ? "early" : run.materialScore <= 70 ? "mid" : "late";
     const previewX = w - 168;
     const previewY = 62;
     const previewW = 140;
@@ -696,8 +509,6 @@
       h: previewH - 40,
       structure: run.structure || STRUCTURE.wide,
       style: run.style || STYLE.industrialModern,
-      tier,
-      stage,
       focusBuildingId: null,
     });
 
@@ -718,8 +529,6 @@
             : STYLE.industrialModern;
       const forcedStructure =
         focus === BUILDINGS.westminster.id || focus === BUILDINGS.bbc.id ? STRUCTURE.tall : STRUCTURE.wide;
-      const forcedTier = focus === BUILDINGS.bbc.id ? "high" : focus === BUILDINGS.hoover.id ? "mid" : tier;
-      const forcedStage = "late";
 
       ctx.globalAlpha = 0.85 * a;
       ctx.fillStyle = "rgba(0,0,0,0.65)";
@@ -733,8 +542,6 @@
         h: bigH,
         structure: forcedStructure,
         style: forcedStyle,
-        tier: forcedTier,
-        stage: forcedStage,
         focusBuildingId: focus,
         rotation: rot,
       });
@@ -751,9 +558,6 @@
 
       run.progress = clamp(run.progress + run.speed * dt, 0, 1.2);
       processGates();
-
-      spawnPickups();
-      collectPickups();
 
       run.player.laneX = lerp(run.player.laneX, run.player.laneTarget, 1 - Math.pow(0.001, dt));
       if (Math.abs(run.player.laneX - run.player.laneTarget) < 0.001) run.player.laneX = run.player.laneTarget;
